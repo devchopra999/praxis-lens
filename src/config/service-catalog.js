@@ -34,6 +34,47 @@ export const SERVICE_CATALOG = {
     repository: { url: process.env.MOCK_SERVER_REPO_URL || "https://github.com/expressjs/express.git" },
     build: { type: "node", entry: "examples/hello-world/index.js" }
   },
+  // CosmicBites demo services - each ships its own Dockerfile, so no `build` fallback is needed.
+  auth: {
+    image: process.env.AUTH_IMAGE || "alpine:3.19",
+    port: 4000,
+    dependencies: [],
+    database: "mysql",
+    healthcheck: { type: "http", path: "/health" },
+    repository: { url: process.env.AUTH_REPO_URL || "https://github.com/prerit-deviloper/distributed-auth.git" }
+  },
+  orders: {
+    image: process.env.ORDERS_IMAGE || "alpine:3.19",
+    port: 4002,
+    dependencies: [],
+    database: "mysql",
+    healthcheck: { type: "http", path: "/health" },
+    repository: { url: process.env.ORDERS_REPO_URL || "https://github.com/prerit-deviloper/distributed-orders.git" }
+  },
+  payments: {
+    image: process.env.PAYMENTS_IMAGE || "alpine:3.19",
+    port: 4003,
+    dependencies: [],
+    database: "mysql",
+    healthcheck: { type: "http", path: "/health" },
+    repository: { url: process.env.PAYMENTS_REPO_URL || "https://github.com/prerit-deviloper/distributed-payments.git" }
+  },
+  notifications: {
+    image: process.env.NOTIFICATIONS_IMAGE || "alpine:3.19",
+    port: 4004,
+    dependencies: [],
+    database: "mysql",
+    healthcheck: { type: "http", path: "/health" },
+    repository: { url: process.env.NOTIFICATIONS_REPO_URL || "https://github.com/prerit-deviloper/distributed-notifications.git" }
+  },
+  // Proxies to the 4 services above by container hostname (its own env config, not a `dependencies` entry).
+  gateway: {
+    image: process.env.GATEWAY_IMAGE || "alpine:3.19",
+    port: 8080,
+    dependencies: [],
+    healthcheck: { type: "http", path: "/health" },
+    repository: { url: process.env.GATEWAY_REPO_URL || "https://github.com/prerit-deviloper/distributed-gateway.git" }
+  },
   // dependencyOnly: never directly requestable/startable - only reachable via a service's
   // `database` field, the `databases` array, or a future `dependencies` entry naming it.
   mysql: {

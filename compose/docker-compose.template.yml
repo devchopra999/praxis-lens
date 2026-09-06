@@ -67,3 +67,50 @@ services:
     environment:
       ORCHESTRATOR_URL: http://orchestrator:8000
       SERVICE_NAME: mock-server
+
+  # CosmicBites demo services (real repos: distributed-auth/orders/payments/notifications/gateway).
+  # DATABASE_URL points at each service's own dedicated mysql-<name> container (see worker.js
+  # provisionDefaultDatabase) with the db name each service's own schema.sql creates via
+  # "CREATE DATABASE IF NOT EXISTS" - ignored by the alpine stand-in, used once built from source.
+  auth:
+    image: ${AUTH_IMAGE:-alpine:3.19}
+    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 4000; done"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      SERVICE_NAME: auth
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-praxis}@mysql-auth:3306/auth_db
+
+  orders:
+    image: ${ORDERS_IMAGE:-alpine:3.19}
+    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 4002; done"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      SERVICE_NAME: orders
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-praxis}@mysql-orders:3306/order_db
+
+  payments:
+    image: ${PAYMENTS_IMAGE:-alpine:3.19}
+    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 4003; done"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      SERVICE_NAME: payments
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-praxis}@mysql-payments:3306/payment_db
+
+  notifications:
+    image: ${NOTIFICATIONS_IMAGE:-alpine:3.19}
+    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 4004; done"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      SERVICE_NAME: notifications
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-praxis}@mysql-notifications:3306/notification_db
+
+  gateway:
+    image: ${GATEWAY_IMAGE:-alpine:3.19}
+    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 8080; done"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      SERVICE_NAME: gateway
+      AUTH_URL: http://auth:4000
+      ORDER_URL: http://orders:4002
+      PAYMENT_URL: http://payments:4003
+      NOTIFICATION_URL: http://notifications:4004
