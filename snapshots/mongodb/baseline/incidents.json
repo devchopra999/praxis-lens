@@ -1,0 +1,4 @@
+[
+  { "_id": "inc-1001", "service": "edi", "status": "open", "summary": "Axis staging returning 500s" },
+  { "_id": "inc-1002", "service": "mob", "status": "resolved", "summary": "Stale MySQL connection pool" }
+]

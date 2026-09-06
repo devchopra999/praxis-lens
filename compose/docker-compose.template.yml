@@ -1,0 +1,69 @@
+services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-praxis}
+      MYSQL_DATABASE: app
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - ../snapshots/mysql:/snapshots:ro
+
+  mongodb:
+    image: mongo:8
+    volumes:
+      - ../snapshots/mongodb:/snapshots:ro
+
+  redis:
+    image: redis:7
+
+  # Always-on reverse proxy every other service points at instead of calling each other directly;
+  # built once from the orchestrator repo and reused across environments (see orchestrator-manager.js).
+  orchestrator:
+    image: praxis-orchestrator:latest
+    environment:
+      PORT: "8000"
+      ROUTES_FILE: /app/data/routes.json
+    ports:
+      - "0:8000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8000/healthz').then(r=>process.exit(r.ok?0:1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Stand-ins for the real company images: a plain alpine looping a busybox `nc` listener that
+  # answers every request with "200 OK" (busybox's default alpine build has no httpd applet).
+  # Override *_IMAGE to point at real images instead (real images provide their own entrypoint).
+  mob:
+    image: ${MOB_IMAGE:-alpine:3.19}
+    # only reached by the alpine stand-in; a built-from-source image sets its own ENTRYPOINT, so
+    # this becomes harmless trailing argv passed to that entrypoint instead of replacing it
+    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 8080; done"]
+    environment:
+      DB_HOST: mysql
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      SERVICE_NAME: mob
+      # picked up by spring-petclinic's mysql profile when built from source; ignored otherwise
+      SPRING_PROFILES_ACTIVE: mysql
+      MYSQL_URL: jdbc:mysql://mysql-mob/app
+      MYSQL_USER: root
+      MYSQL_PASS: ${MYSQL_ROOT_PASSWORD:-praxis}
+
+  edi:
+    image: ${EDI_IMAGE:-alpine:3.19}
+    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 8081; done"]
+    environment:
+      DB_HOST: mysql
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      SERVICE_NAME: edi
+
+  mock-server:
+    image: ${MOCK_SERVER_IMAGE:-alpine:3.19}
+    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 3000; done"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      SERVICE_NAME: mock-server
