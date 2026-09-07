@@ -7,6 +7,7 @@ import { waitForHealthy } from "../services/health-manager.js";
 import * as jobManager from "../services/job-manager.js";
 import * as databaseManager from "../services/database-manager.js";
 import * as orchestratorManager from "../services/orchestrator-manager.js";
+import { ensureToolboxImage, TOOLBOX_SERVICE_NAME, TOOLBOX_CATALOG_ENTRY } from "../services/toolbox-manager.js";
 import * as headerInjectorManager from "../services/header-injector-manager.js";
 import * as repositoryManager from "../services/repository-manager.js";
 import { getCatalogEntry, listDependencyOnlyServiceNames } from "../config/service-catalog.js";
@@ -133,6 +134,13 @@ export async function runCreateEnvironmentJob({
     upsertServiceRow(environmentId, "orchestrator", "running");
     jobManager.appendProgress(jobId, "orchestrator healthy");
 
+    await ensureToolboxImage();
+    jobManager.appendProgress(jobId, "starting toolbox");
+    await composeManager.up(project, environmentId, [TOOLBOX_SERVICE_NAME]);
+    await waitForHealthy(project, TOOLBOX_SERVICE_NAME, { catalogEntry: TOOLBOX_CATALOG_ENTRY });
+    upsertServiceRow(environmentId, TOOLBOX_SERVICE_NAME, "running");
+    jobManager.appendProgress(jobId, "toolbox healthy");
+
     if (repository?.url && repository?.commit) {
       await repositoryManager.cloneAndCheckout({ environmentId, workspace, url: repository.url, commit: repository.commit });
       jobManager.appendProgress(jobId, "repository checked out");
@@ -175,6 +183,7 @@ export async function runCreateEnvironmentJob({
       await startAndAwaitHealthy(jobId, project, environmentId, appServices);
       await orchestratorManager.registerCatalogRoutes(project, appServices);
       await headerInjectorManager.refreshCallerMap(environmentId, project);
+      await headerInjectorManager.registerFintechGatewayRouting(environmentId, project, appServices);
       jobManager.appendProgress(jobId, `registered ${appServices.join(", ")} with orchestrator`);
     }
 

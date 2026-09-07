@@ -20,5 +20,8 @@ const jobColumns = db.prepare("PRAGMA table_info(jobs)").all();
 if (!jobColumns.some((col) => col.name === "error_details")) {
   db.exec("ALTER TABLE jobs ADD COLUMN error_details TEXT");
 }
+if (!jobColumns.some((col) => col.name === "result")) {
+  db.exec("ALTER TABLE jobs ADD COLUMN result TEXT");
+}
 
 export default db;

@@ -19,6 +19,7 @@ import { addService } from "./compose-override.js";
 import * as composeManager from "./compose-manager.js";
 import { waitForHealthy } from "./health-manager.js";
 import { findContainer, inspectContainer, execInContainer } from "../docker/docker-client.js";
+import * as orchestratorManager from "./orchestrator-manager.js";
 import db from "../db/sqlite.js";
 
 const HEADER_INJECTOR_IMAGE = "nginx:alpine";
@@ -27,6 +28,30 @@ const HEADER_INJECTOR_SERVICE = "header-injector";
 // Not a SERVICE_CATALOG entry (hidden/internal, like the orchestrator itself), so waitForHealthy
 // needs this passed explicitly instead of resolving it from the catalog.
 export const HEADER_INJECTOR_CATALOG_ENTRY = { port: 80, healthcheck: { type: "tcp" } };
+
+// Fixed hostname->logical-name aliases for the fintech demo services' hardcoded direct-call
+// hostnames (see compose/docker-compose.template.yml LEDGER_URL/NOTIFICATIONS_URL/PAYMENT_GATEWAY_URL),
+// so payments/ledger route through the orchestrator instead of calling each other directly.
+export const FINTECH_GATEWAY_ALIASES = {
+  "ledger-gw.local": "ledger",
+  "notifications-gw.local": "notifications",
+  "api.nexpay.example.com": "payment-gateway"
+};
+
+// Any of these being (re)started means the alias set above needs to be (re)applied - the aliases
+// are environment-wide, not per-caller, so it's safe/idempotent to register them every time.
+const FINTECH_GATEWAY_SERVICES = new Set(["ledger", "payments", "notifications"]);
+
+// Call alongside registerCatalogRoutes/refreshCallerMap after any of the fintech services starts,
+// so their hardcoded direct-call hostnames resolve through the header injector -> orchestrator
+// instead of hitting each other directly. No-ops if none of the started services are fintech ones.
+export async function registerFintechGatewayRouting(environmentId, project, serviceNames) {
+  if (!serviceNames.some((name) => FINTECH_GATEWAY_SERVICES.has(name))) return;
+  await updateAliases(environmentId, project, FINTECH_GATEWAY_ALIASES);
+  if (serviceNames.includes("payments")) {
+    await orchestratorManager.putRoute(project, "payments", "payment-gateway", "payment-gateway");
+  }
+}
 
 function injectorDir(environmentId) {
   return path.join(workspacePath(environmentId), "header-injector");

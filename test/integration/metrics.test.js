@@ -52,7 +52,7 @@ test("metrics with no ?services= defaults to every running service", async () =>
   const res = await request(app).get(`/environments/${environmentId}/metrics`);
   assert.equal(res.status, 200);
   const names = Object.keys(res.body.services).sort();
-  assert.deepEqual(names, ["edi", "mysql-edi", "orchestrator"].sort());
+  assert.deepEqual(names, ["edi", "mysql-edi", "orchestrator", "toolbox"].sort());
 });
 
 test("an unknown service name is rejected", async () => {

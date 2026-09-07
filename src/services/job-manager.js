@@ -38,7 +38,8 @@ export function getJob(jobId) {
   return {
     ...row,
     progress: JSON.parse(row.progress || "[]"),
-    errorDetails: row.error_details ? JSON.parse(row.error_details) : undefined
+    errorDetails: row.error_details ? JSON.parse(row.error_details) : undefined,
+    result: row.result ? JSON.parse(row.result) : undefined
   };
 }
 
@@ -53,8 +54,15 @@ export function appendProgress(jobId, note) {
   db.prepare("UPDATE jobs SET progress = ? WHERE id = ?").run(JSON.stringify(progress), jobId);
 }
 
-export function markReady(jobId) {
-  db.prepare("UPDATE jobs SET status = ?, completed_at = ? WHERE id = ?").run(JOB_STATUS.READY, nowIso(), jobId);
+// result is optional - jobs with no natural resource of their own (e.g. load tests) can stash
+// their outcome here instead of the caller having to poll some other endpoint for it.
+export function markReady(jobId, result) {
+  db.prepare("UPDATE jobs SET status = ?, result = ?, completed_at = ? WHERE id = ?").run(
+    JOB_STATUS.READY,
+    result !== undefined ? JSON.stringify(result) : null,
+    nowIso(),
+    jobId
+  );
 }
 
 export function markFailed(jobId, error) {

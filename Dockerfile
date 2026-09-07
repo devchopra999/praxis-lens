@@ -1,9 +1,10 @@
 FROM node:20-alpine
 
 # docker-cli/compose-plugin let this service drive `docker compose`; git is needed for repository-manager.
-# python3/pip install aider-chat, the CLI aider-manager.js shells out to.
+# python3/pip install aider-chat, the CLI aider-manager.js shells out to; boto3 is litellm's
+# Bedrock client dependency.
 RUN apk add --no-cache docker-cli docker-cli-compose git python3 py3-pip \
-  && pip install --no-cache-dir --break-system-packages aider-chat
+  && pip install --no-cache-dir --break-system-packages aider-chat boto3
 
 WORKDIR /app
 COPY package*.json ./

@@ -52,6 +52,7 @@ async function runStartJob(jobId, project, environmentId, serviceName) {
     }
     await orchestratorManager.registerCatalogRoutes(project, services);
     await headerInjectorManager.refreshCallerMap(environmentId, project);
+    await headerInjectorManager.registerFintechGatewayRouting(environmentId, project, services);
     jobManager.markReady(jobId);
   } catch (err) {
     upsertServiceRow(environmentId, serviceName, "failed");
@@ -109,6 +110,7 @@ async function runBuildAndStartJob(jobId, project, environmentId, serviceName, b
     }
     await orchestratorManager.registerCatalogRoutes(project, services);
     await headerInjectorManager.refreshCallerMap(environmentId, project);
+    await headerInjectorManager.registerFintechGatewayRouting(environmentId, project, services);
     jobManager.markReady(jobId);
   } catch (err) {
     upsertServiceRow(environmentId, serviceName, "failed");

@@ -30,7 +30,8 @@ export const JOB_TYPES = {
   DESTROY_ENVIRONMENT: "destroy_environment",
   CLONE_REPOSITORY: "clone_repository",
   BUILD_AND_START_SERVICE: "build_and_start_service",
-  REBUILD_SERVICE: "rebuild_service"
+  REBUILD_SERVICE: "rebuild_service",
+  LOAD_TEST: "load_test"
 };
 
 export const HEALTHCHECK_TYPES = {

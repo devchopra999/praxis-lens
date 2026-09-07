@@ -14,6 +14,8 @@ import metricsRouter from "./routes/metrics.js";
 import databaseRouter from "./routes/database.js";
 import codeRouter from "./routes/code.js";
 import orchestratorRouter from "./routes/orchestrator.js";
+import loadTestRouter from "./routes/load-test.js";
+import requestRouter from "./routes/request.js";
 
 const app = express();
 
@@ -62,6 +64,8 @@ app.use(metricsRouter);
 app.use(databaseRouter);
 app.use(codeRouter);
 app.use(orchestratorRouter);
+app.use(loadTestRouter);
+app.use(requestRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: { code: "NOT_FOUND", message: `No route for ${req.method} ${req.path}` } });

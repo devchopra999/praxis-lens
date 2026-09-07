@@ -75,10 +75,11 @@ export async function runQuery(environmentId, serviceName, query) {
 
   const engine = resolveEngine(serviceName);
   if (!engine) {
+    const queryableServices = listProvisionedServices(environmentId).filter((s) => resolveEngine(s.name));
     throw appError(ErrorCodes.UNSUPPORTED_DATABASE_ENGINE, `Service "${serviceName}" is not a queryable database`, {
       service: serviceName,
-      validEngines: ["mysql", "mongodb"],
-      hint: "Only mysql/mongodb services (shared \"mysql\"/\"mongodb\" or dynamically provisioned \"<engine>-<name>\" instances) can be queried."
+      queryableServices,
+      hint: "Only mysql/mongodb services (shared \"mysql\"/\"mongodb\" or dynamically provisioned \"<engine>-<name>\" instances) can be queried. See queryableServices for the ones available in this environment."
     });
   }
 

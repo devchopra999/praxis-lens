@@ -1,11 +1,15 @@
 import { Router } from "express";
 import { z } from "zod";
 import { validate } from "../utils/validate.js";
-import { requireEnvironment, listProvisionedServices } from "../services/environment-manager.js";
+import { getEnvironment, listProvisionedServices } from "../services/environment-manager.js";
 import { findContainer, execInContainer } from "../docker/docker-client.js";
 import { appError, AppError, ErrorCodes } from "../utils/errors.js";
 
 const router = Router();
+
+// Inside any container, these all resolve back to that container itself - a command targeting
+// one is almost always the agent mistaking "the container it execed into" for the service it meant.
+const LOOPBACK_RE = /\b(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)\b/i;
 
 // command must be an argv array (never a shell string) so the AI agent can't smuggle in shell syntax.
 const executeSchema = z.object({
@@ -15,9 +19,18 @@ const executeSchema = z.object({
 });
 
 router.post("/environments/:id/execute", validate(executeSchema), async (req, res) => {
-  const env = requireEnvironment(req.params.id);
+  const env = getEnvironment(req.params.id);
   const { service, command, timeout } = req.validated;
   const timeoutSec = timeout || 300;
+
+  if (command.some((arg) => LOOPBACK_RE.test(arg))) {
+    throw appError(ErrorCodes.VALIDATION_ERROR, `Command targets loopback, which inside "${service}" only ever reaches "${service}" itself, not other services`, {
+      service,
+      command,
+      serviceEndpoints: env.service_endpoints,
+      hint: 'Use the target service\'s name as the hostname instead, e.g. "curl http://ledger:4002/..." - see serviceEndpoints (or GET /environments/:id/service-endpoints) for the exact URL of every service in this environment.'
+    });
+  }
 
   const container = await findContainer(env.compose_project, service);
   if (!container) {

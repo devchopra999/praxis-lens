@@ -19,11 +19,16 @@ Node.js + Express (ES modules, no TypeScript) + `dockerode` / `docker compose` C
 
 ```bash
 npm install
-cp .env.example .env
-npm run dev        # nodemon, reads .env
+# create a .env file with the keys below (there's no committed .env.example - .env is gitignored)
+npm run dev         # nodemon, reads .env
 # or
 npm start
 ```
+
+Key `.env` variables: `PORT`, `MOB_IMAGE`/`EDI_IMAGE`/`MOCK_SERVER_IMAGE` (real-image overrides),
+`MYSQL_ROOT_PASSWORD`, `PRAXIS_DATA_DIR`/`PRAXIS_WORKSPACES_DIR`, and the Aider settings
+(`AIDER_MODEL`, `AIDER_TIMEOUT_MS`, plus whichever provider key it needs - `OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_REGION` for Bedrock, etc.).
 
 The server listens on `PORT` (default `3000`). SQLite data goes to `PRAXIS_DATA_DIR`
 (default `./data`), per-environment workspaces to `PRAXIS_WORKSPACES_DIR` (default `./workspaces`).
@@ -42,14 +47,25 @@ component ever allowed to talk to the Docker Engine API, per the security model 
 Only services listed in [src/config/service-catalog.js](src/config/service-catalog.js) can be
 started — the agent can never supply an arbitrary Docker image.
 
-| service       | role                | dependencies   | own database (default) | image (default)                        |
-|---------------|---------------------|----------------|-------------------------|-----------------------------------------|
-| `mob`         | application         | —              | `mysql-mob`             | `alpine:3.19` stand-in (override via `MOB_IMAGE`) |
-| `edi`         | application         | —              | `mysql-edi`             | `alpine:3.19` stand-in (override via `EDI_IMAGE`) |
-| `mock-server` | application         | —              | —                       | `alpine:3.19` stand-in (override via `MOCK_SERVER_IMAGE`) |
-| `mysql`       | dependency-only (never directly requestable) | —  | —           | `mysql:8`                               |
-| `mongodb`     | dependency-only (never directly requestable) | —  | —           | `mongo:8`                               |
-| `redis`       | dependency-only (never directly requestable) | —  | —           | `redis:7`                               |
+| service         | role                | dependencies   | own database (default) | image (default)                        |
+|-----------------|---------------------|----------------|-------------------------|-----------------------------------------|
+| `mob`           | application         | —              | `mysql-mob`             | `alpine:3.19` stand-in (override via `MOB_IMAGE`) |
+| `edi`           | application         | —              | `mysql-edi`             | `alpine:3.19` stand-in (override via `EDI_IMAGE`) |
+| `mock-server`   | application         | —              | —                       | `alpine:3.19` stand-in (override via `MOCK_SERVER_IMAGE`) |
+| `auth`          | fintech demo       | —              | `mysql-auth`            | `alpine:3.19` stand-in (override via `AUTH_IMAGE`) |
+| `ledger`        | fintech demo       | —              | `mysql-ledger`          | `alpine:3.19` stand-in (override via `LEDGER_IMAGE`) |
+| `payments`      | fintech demo       | —              | `mysql-payments`        | `alpine:3.19` stand-in (override via `PAYMENTS_IMAGE`) |
+| `notifications` | fintech demo       | —              | `mysql-notifications`   | `alpine:3.19` stand-in (override via `NOTIFICATIONS_IMAGE`) |
+| `mysql`         | dependency-only (never directly requestable) | —  | —           | `mysql:8`                               |
+| `mongodb`       | dependency-only (never directly requestable) | —  | —           | `mongo:8`                               |
+| `redis`         | dependency-only (never directly requestable) | —  | —           | `redis:7`                               |
+
+`auth`/`ledger`/`payments`/`notifications` are the "fintech" demo microservices, each with its own
+upstream repo under `devchopra999/fintech-*` (each ships its own Dockerfile, no `build:` fallback
+needed unlike `mob`/`mock-server`). All 4 read a single `DATABASE_URL` pointing at their dedicated
+`mysql-<name>` database; there is no gateway/proxy in front of them - they call each other directly
+by container hostname (e.g. `payments` calls `ledger` at `http://ledger:4002`), and `auth`/
+`ledger`/`payments` all verify JWTs against the same `JWT_SECRET`.
 
 `mysql`/`mongodb`/`redis` only ever exist as `<engine>-<name>` instances provisioned on behalf of
 another service — via that service's `database` catalog field or the `databases` request array
@@ -97,6 +113,37 @@ Every `POST /environments` call creates:
   env files), and per-service config
 - isolated containers, network, databases, and its own orchestrator — never connects to any real
   staging/production system
+- an always-on `toolbox` container (Python 3 + common CLI tools: git, curl, jq, vim, ping, dig,
+  etc.) for debugging/scripting against the other services via the existing `/execute` endpoint —
+  see "Toolbox container" below
+
+## Toolbox container
+
+Every environment gets a `toolbox` service automatically — a Python 3 + common-CLI-tools container
+(git, curl, wget, jq, vim, net-tools, iproute2, ping, dig, ssh, etc. — see
+[docker/toolbox/Dockerfile](docker/toolbox/Dockerfile)) with no server process of its own. It exists
+purely so an agent can debug or script against the environment's other services. The `POST
+/environments` response's `service_descriptions.toolbox` field describes it up front (available
+immediately, before the create job finishes), and it's usable like any other service once running:
+
+```bash
+curl -s -X POST http://localhost:3000/environments/env-abc123/execute \
+  -H 'Content-Type: application/json' \
+  -d '{"service": "toolbox", "command": ["python3", "--version"]}'
+```
+
+From inside `toolbox` (or any container), `localhost`/`127.0.0.1` only ever resolves back to that
+same container — reach other services by their compose **service name** as the hostname, on the
+port they listen on *inside* their own container (services don't publish ports to the host). Both
+`POST /environments` and `GET /environments/:id` include a `service_endpoints` map with the exact
+`http://<service>:<port>` address for every service in the environment, so an agent never has to
+guess:
+
+```bash
+curl -s -X POST http://localhost:3000/environments/env-abc123/execute \
+  -H 'Content-Type: application/json' \
+  -d '{"service": "toolbox", "command": ["curl", "-s", "http://ledger:4002/health"]}'
+```
 
 ## Health checks (no host port publishing)
 
@@ -199,18 +246,19 @@ Once the app services in an environment are healthy, every HTTP-catalogued one (
 pointing at its docker-network address (e.g. `http://edi:8081`) — the same happens again whenever
 a service is (re)started later.
 
-Routes are keyed by the **(from, to)** caller/destination pair, not just the destination: an
-exact `(from, to)` route always wins, falling back to the wildcard `(*, to)` route when no
-caller-specific override exists. This means redirecting one caller's traffic never affects any
-other caller of the same destination.
+Routes are keyed by the **(sourceService, destinationService)** caller/destination pair, not just
+the destination: an exact `(sourceService, destinationService)` route always wins, falling back to
+the wildcard `(*, destinationService)` route when no caller-specific override exists. This means
+redirecting one caller's traffic never affects any other caller of the same destination.
 
 Its port is published to an OS-assigned free host port (like Vault used to be) so an agent can
 reach its dashboard/API directly; `GET /environments/:id/orchestrator` reports that URL. An agent
 can then carve out a caller-specific redirect at runtime via the routes API below — e.g.
 swapping `edi`'s `axis-api` dependency for a mock server mid-experiment, leaving every other
-caller of `axis-api` untouched — without restarting anything. The route's `target` is always a
-catalog service name (e.g. `mock-server`), never a raw URL — the wrapper resolves it to the
-actual docker-network address.
+caller of `axis-api` untouched — without restarting anything. A route's `pointsTo` is always a
+catalog service name (e.g. `mock-server`), never a raw URL, in both requests and responses — the
+wrapper resolves it to the actual docker-network address and always translates it back to the
+friendly name before responding, so callers never see or construct a raw URL themselves.
 
 ### Zero-code integration via the header injector
 
@@ -242,11 +290,12 @@ All bodies are JSON, all long-running operations return a `jobId` immediately (p
 
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| POST | `/environments` | `{ services: string[], databases?: [{ name, engine?, snapshot? }], repository?: { url, commit } }` | 202, `{ environmentId, jobId, status: "starting" }` |
-| GET | `/environments/:id` | — | current status + per-service status |
+| POST | `/environments` | `{ services: string[], databases?: [{ name, engine?, snapshot? }], repository?: { url, commit } }` | 202, `{ environmentId, jobId, status: "starting", service_descriptions: { toolbox: "..." }, service_endpoints: { <service>: "http://<service>:<port>", ... } }` |
+| GET | `/environments/:id` | — | current status + per-service status + `service_endpoints` |
+| GET | `/environments/:id/service-endpoints` | — | `{ environmentId, service_endpoints: { <service>: "http://<service>:<port>", ... } }` only, no other environment state |
 | DELETE | `/environments/:id` | — | idempotent, `docker compose down -v` + workspace cleanup |
 | GET | `/jobs/:jobId` | — | `{ status, progress: string[], error? }` |
-| POST | `/environments/:id/services/:service/start` | — | resolves deps, joins existing network |
+| POST | `/environments/:id/services/:service/start` | `{ branch? }` | resolves deps, joins existing network; `branch` defaults to `main` when the service has a repository configured |
 | POST | `/environments/:id/services/:service/stop` | — | |
 | POST | `/environments/:id/services/:service/restart` | — | never recreates the environment |
 | GET | `/environments/:id/services/:service/logs?tail=&since=` | — | |
@@ -255,10 +304,10 @@ All bodies are JSON, all long-running operations return a `jobId` immediately (p
 | POST | `/environments/:id/services/:service/config` | `{ key, value }` | per-env config env file, takes effect on next restart |
 | GET | `/environments/:id/orchestrator` | — | `{ hostUrl, dashboardUrl, internalUrl, healthy }` for this environment's orchestrator |
 | GET | `/environments/:id/orchestrator/routes` | — | every route currently registered |
-| GET | `/environments/:id/orchestrator/routes/:from/:to` | — | `{ from, to, target, updatedAt }`, exact match only (no wildcard fallback), 404 if unregistered. Use `*` as `:from` to look up the wildcard route |
-| PUT | `/environments/:id/orchestrator/routes/:from/:to` | `{ target }` | create/update one route, `target` is a catalog service name (never a raw URL); effective on the very next proxied request. Use `*` as `:from` to set the wildcard (any-caller) route |
-| POST | `/environments/:id/orchestrator/routes/bulk` | `{ routes: [{ from, to, target }, ...] }` | register/update many routes in one call, each `target` a catalog service name |
-| DELETE | `/environments/:id/orchestrator/routes/:from/:to` | — | remove a route |
+| GET | `/environments/:id/orchestrator/routes/:sourceService/:destinationService` | — | `{ sourceService, destinationService, pointsTo, updatedAt }`, exact match only (no wildcard fallback), 404 if unregistered. Use `*` as `:sourceService` to look up the wildcard route |
+| PUT | `/environments/:id/orchestrator/routes/:sourceService/:destinationService` | `{ pointsTo }` | create/update one route, `pointsTo` is a catalog service name (never a raw URL); effective on the very next proxied request. Use `*` as `:sourceService` to set the wildcard (any-caller) route |
+| POST | `/environments/:id/orchestrator/routes/bulk` | `{ routes: [{ sourceService, destinationService, pointsTo }, ...] }` | register/update many routes in one call, each `pointsTo` a catalog service name |
+| DELETE | `/environments/:id/orchestrator/routes/:sourceService/:destinationService` | — | remove a route |
 | GET | `/environments/:id/orchestrator/aliases` | — | `{ aliases: { hostname: logicalName, ... } }` currently registered with the header injector |
 | PUT | `/environments/:id/orchestrator/aliases` | `{ aliases: { hostname: logicalName, ... } }` | merges given hostnames, (re)creates the header-injector sidecar so each hostname resolves to it |
 | DELETE | `/environments/:id/orchestrator/aliases/:host` | — | stop intercepting one hostname |
@@ -269,6 +318,8 @@ All bodies are JSON, all long-running operations return a `jobId` immediately (p
 | GET | `/environments/:id/metrics?services=&duration=&interval=` | — | CPU/memory time series for multiple services in one call, for direct comparison |
 | POST | `/environments/:id/services/:service/code/ask` | `{ prompt, timeoutMs? }` | read-only aider Q&A against the service's checked-out repo, never changes files |
 | POST | `/environments/:id/services/:service/code/edit` | `{ prompt, timeoutMs? }` | lets aider edit the repo, returns a diff; caller decides whether to rebuild/restart |
+| POST | `/environments/:id/services/:service/request` | `{ endpoint, method?, headers?, body?, timeout? }` | proxies one HTTP request to `service` through the toolbox container; `endpoint` is a path (e.g. `/users/1`), never a full URL. Returns `{ targetUrl, method, statusCode, headers, body, durationMs }` synchronously |
+| POST | `/environments/:id/services/:service/load-test` | `{ endpoint, method?, headers?, body?, hitCount, timeout? }` | fires `hitCount` concurrent requests at `service` through the toolbox container; async job, poll `GET /jobs/:id` for the aggregate summary |
 
 Errors follow `{ "error": { "code": "...", "message": "...", ...details } }` — see
 [src/utils/errors.js](src/utils/errors.js) for the full code list (`INVALID_SERVICE`,
@@ -390,8 +441,9 @@ curl -s -X POST http://localhost:3000/environments/env-abc123/services/mob/resta
 ```
 
 All three return `{ "jobId": "...", "status": "queued" }`; poll `GET /jobs/:jobId` for progress.
-`start` with no `branch` uses the catalog default image; `stop`/`restart` never recreate the rest
-of the environment.
+`start` with no `branch` defaults to `main` for any service with a repository configured (building
+it from source, same as an explicit `branch`); only repo-less services (`mysql`/`mongodb`/`redis`)
+fall back to the catalog default image. `stop`/`restart` never recreate the rest of the environment.
 
 ### Fetch logs
 
@@ -437,13 +489,13 @@ curl -s http://localhost:3000/environments/env-abc123/orchestrator
 # => {"service":"orchestrator","internalUrl":"http://orchestrator:8000","hostUrl":"http://127.0.0.1:54321","dashboardUrl":"http://127.0.0.1:54321","healthy":true}
 
 curl -s http://localhost:3000/environments/env-abc123/orchestrator/routes/*/edi
-# => {"from":"*","to":"edi","target":"http://edi:8081","updatedAt":"2026-09-05T10:00:31.000Z"}
+# => {"sourceService":"*","destinationService":"edi","pointsTo":"edi","updatedAt":"2026-09-05T10:00:31.000Z"}
 
 # redirect ONLY mob's calls to edi, no restart needed - mock-server (or anyone else calling edi)
 # keeps hitting the real edi via the untouched wildcard route
 curl -s -X PUT http://localhost:3000/environments/env-abc123/orchestrator/routes/mob/edi \
   -H 'Content-Type: application/json' \
-  -d '{"target":"mock-server"}'
+  -d '{"pointsTo":"mock-server"}'
 ```
 
 ### Zero-code redirect via the header injector
@@ -460,7 +512,7 @@ curl -s -X PUT http://localhost:3000/environments/env-abc123/orchestrator/aliase
 # source IP now, this only affects edi's traffic, not any other aliased/direct caller of axis-api
 curl -s -X PUT http://localhost:3000/environments/env-abc123/orchestrator/routes/edi/axis-api \
   -H 'Content-Type: application/json' \
-  -d '{"target":"mock-server"}'
+  -d '{"pointsTo":"mock-server"}'
 
 # stop intercepting the hostname
 curl -s -X DELETE http://localhost:3000/environments/env-abc123/orchestrator/aliases/edi-qa.company.com
@@ -619,7 +671,7 @@ curl -s http://localhost:3000/jobs/job-xyz789
 # edi is affected, any other caller of axis-api keeps hitting its current target
 curl -s -X PUT http://localhost:3000/environments/env-abc123/orchestrator/routes/edi/axis-api \
   -H 'Content-Type: application/json' \
-  -d '{"target":"mock-server"}'
+  -d '{"pointsTo":"mock-server"}'
 
 # 4. restart edi to pick up the new secret
 curl -s -X POST http://localhost:3000/environments/env-abc123/services/edi/restart
@@ -649,8 +701,9 @@ curl -s -X POST http://localhost:3000/environments/env-abc123/services/edi/code/
 curl -s -X POST http://localhost:3000/environments/env-abc123/services/edi/start \
   -H 'Content-Type: application/json' -d '{"branch":"main"}'
 
-# 7. discover redis is needed and add it to the SAME environment
-curl -s -X POST http://localhost:3000/environments/env-abc123/services/redis/start
+# 7. discover another service is needed and add it to the SAME environment (redis/mongodb/mysql
+# are dependency-only and can't be started directly - start a catalogued service instead)
+curl -s -X POST http://localhost:3000/environments/env-abc123/services/mock-server/start
 
 # 8. (optional) create a second environment with its own dedicated per-service databases instead
 # of the single shared mysql/mongodb, so each can be metered independently
@@ -685,4 +738,4 @@ npm run test:integration  # full lifecycle against real local Docker (slower, pu
 - **Route not found for a service that should be registered**: registration only happens after
   that service reports healthy; poll `GET /jobs/:jobId` until `ready` before calling
   `GET /environments/:id/orchestrator/routes/*/:service` (auto-registration writes the wildcard
-  `from` route, not an exact-caller one).
+  `sourceService` route, not an exact-caller one).

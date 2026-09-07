@@ -9,9 +9,11 @@ import {
   resolveDependencies,
   getRepositoryUrl,
   listServiceNames,
+  getInternalUrl,
   SERVICE_REPOSITORIES
 } from "../config/service-catalog.js";
 import { generateEnvironmentId } from "../utils/ids.js";
+import { TOOLBOX_SERVICE_NAME, TOOLBOX_DESCRIPTION } from "./toolbox-manager.js";
 import * as composeManager from "./compose-manager.js";
 import * as headerInjectorManager from "./header-injector-manager.js";
 import * as jobManager from "./job-manager.js";
@@ -24,6 +26,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+// http://<name>:<port> for every name with a catalogued port - lets a caller (or the toolbox
+// container) reach other services by their real docker-network address instead of guessing
+// "localhost", which inside a container only ever resolves back to itself.
+function buildServiceEndpoints(serviceNames) {
+  const endpoints = {};
+  for (const name of serviceNames) {
+    const url = getInternalUrl(name);
+    if (url) endpoints[name] = url;
+  }
+  return endpoints;
 }
 
 export function composeProjectName(environmentId) {
@@ -56,7 +70,7 @@ export function getEnvironment(environmentId) {
   const services = db
     .prepare("SELECT service_name, status, container_id, updated_at FROM services WHERE environment_id = ?")
     .all(environmentId);
-  return { ...env, services };
+  return { ...env, services, service_endpoints: buildServiceEndpoints(services.map((s) => s.service_name)) };
 }
 
 // True for any service actually brought up in this environment, catalogued or dynamically
@@ -149,7 +163,15 @@ export async function createEnvironment({ services, databases, branches, reposit
     }
   );
 
-  return { environmentId, jobId, status: ENVIRONMENT_STATUS.STARTING };
+  return {
+    environmentId,
+    jobId,
+    status: ENVIRONMENT_STATUS.STARTING,
+    // Utility infra the caller didn't ask for but gets anyway - known immediately, unlike the
+    // rest of environment startup which only finishes once the async job above completes.
+    service_descriptions: { [TOOLBOX_SERVICE_NAME]: TOOLBOX_DESCRIPTION },
+    service_endpoints: buildServiceEndpoints(requestedServices)
+  };
 }
 
 function upsertServiceRow(environmentId, serviceName, status) {

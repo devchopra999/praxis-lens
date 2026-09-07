@@ -13,6 +13,7 @@ router.get("/jobs/:jobId", (req, res) => {
     progress: job.progress,
     error: job.error || undefined,
     errorDetails: job.errorDetails,
+    result: job.result,
     createdAt: job.created_at,
     startedAt: job.started_at,
     completedAt: job.completed_at

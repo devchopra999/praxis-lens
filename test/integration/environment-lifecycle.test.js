@@ -60,7 +60,7 @@ test("dependencies are resolved automatically and requested+dependency services 
 
   const env = await request(app).get(`/environments/${environmentId}`);
   const names = env.body.services.map((s) => s.service_name).sort();
-  assert.deepEqual(names, ["edi", "mysql-edi", "orchestrator"]);
+  assert.deepEqual(names, ["edi", "mysql-edi", "orchestrator", "toolbox"]);
   for (const svc of env.body.services) assert.equal(svc.status, "running");
 });
 
@@ -122,7 +122,7 @@ test("the orchestrator auto-registers a route for every started HTTP app service
 
   const route = await request(app).get(`/environments/${environmentId}/orchestrator/routes/*/edi`);
   assert.equal(route.status, 200);
-  assert.equal(route.body.target, "http://edi:8081");
+  assert.equal(route.body.pointsTo, "edi");
 });
 
 test("commands execute inside the target container and capture output", async () => {

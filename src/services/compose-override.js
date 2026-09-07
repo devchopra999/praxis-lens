@@ -32,12 +32,16 @@ export function addVolumeMount(environmentId, serviceName, hostPath, containerPa
 }
 
 // Pins a service to a locally-built image (e.g. the result of building a checked-out branch)
-// so the next `compose up` uses it instead of the catalog's default image.
+// so the next `compose up` uses it instead of the catalog's default image. Also clears the base
+// template's alpine-stand-in `command:` (e.g. the busybox nc loop) - Compose only replaces a
+// field if the override redeclares it, so a real image's own CMD/ENTRYPOINT would otherwise never
+// run; `command: null` unsets it back to the image default (see Compose file merge semantics).
 export function setImage(environmentId, serviceName, image) {
   const doc = load(environmentId);
   doc.services ||= {};
   doc.services[serviceName] ||= {};
   doc.services[serviceName].image = image;
+  doc.services[serviceName].command = null;
   save(environmentId, doc);
 }
 

@@ -41,9 +41,17 @@ router.get("/environments/:id", (req, res) => {
     composeProject: env.compose_project,
     workspace: env.workspace,
     services: env.services,
+    service_endpoints: env.service_endpoints,
     createdAt: env.created_at,
     updatedAt: env.updated_at
   });
+});
+
+// Lightweight lookup for agents that only need service name -> internal URL mappings, without
+// the rest of the environment payload (status, timestamps, etc.).
+router.get("/environments/:id/service-endpoints", (req, res) => {
+  const env = environmentManager.getEnvironment(req.params.id);
+  res.json({ environmentId: env.id, service_endpoints: env.service_endpoints });
 });
 
 router.delete("/environments/:id", async (req, res) => {

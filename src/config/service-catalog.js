@@ -34,22 +34,24 @@ export const SERVICE_CATALOG = {
     repository: { url: process.env.MOCK_SERVER_REPO_URL || "https://github.com/expressjs/express.git" },
     build: { type: "node", entry: "examples/hello-world/index.js" }
   },
-  // CosmicBites demo services - each ships its own Dockerfile, so no `build` fallback is needed.
+  // fintech demo services (auth/ledger/payments/notifications) - each ships its own Dockerfile,
+  // so no `build` fallback is needed. Services call each other directly by hostname; there is no
+  // gateway/proxy in front of them.
   auth: {
     image: process.env.AUTH_IMAGE || "alpine:3.19",
     port: 4000,
     dependencies: [],
     database: "mysql",
     healthcheck: { type: "http", path: "/health" },
-    repository: { url: process.env.AUTH_REPO_URL || "https://github.com/prerit-deviloper/distributed-auth.git" }
+    repository: { url: process.env.AUTH_REPO_URL || "https://github.com/devchopra999/fintech-auth.git" }
   },
-  orders: {
-    image: process.env.ORDERS_IMAGE || "alpine:3.19",
+  ledger: {
+    image: process.env.LEDGER_IMAGE || "alpine:3.19",
     port: 4002,
     dependencies: [],
     database: "mysql",
     healthcheck: { type: "http", path: "/health" },
-    repository: { url: process.env.ORDERS_REPO_URL || "https://github.com/prerit-deviloper/distributed-orders.git" }
+    repository: { url: process.env.LEDGER_REPO_URL || "https://github.com/devchopra999/fintech-ledger.git" }
   },
   payments: {
     image: process.env.PAYMENTS_IMAGE || "alpine:3.19",
@@ -57,7 +59,7 @@ export const SERVICE_CATALOG = {
     dependencies: [],
     database: "mysql",
     healthcheck: { type: "http", path: "/health" },
-    repository: { url: process.env.PAYMENTS_REPO_URL || "https://github.com/prerit-deviloper/distributed-payments.git" }
+    repository: { url: process.env.PAYMENTS_REPO_URL || "https://github.com/devchopra999/fintech-payments.git" }
   },
   notifications: {
     image: process.env.NOTIFICATIONS_IMAGE || "alpine:3.19",
@@ -65,15 +67,7 @@ export const SERVICE_CATALOG = {
     dependencies: [],
     database: "mysql",
     healthcheck: { type: "http", path: "/health" },
-    repository: { url: process.env.NOTIFICATIONS_REPO_URL || "https://github.com/prerit-deviloper/distributed-notifications.git" }
-  },
-  // Proxies to the 4 services above by container hostname (its own env config, not a `dependencies` entry).
-  gateway: {
-    image: process.env.GATEWAY_IMAGE || "alpine:3.19",
-    port: 8080,
-    dependencies: [],
-    healthcheck: { type: "http", path: "/health" },
-    repository: { url: process.env.GATEWAY_REPO_URL || "https://github.com/prerit-deviloper/distributed-gateway.git" }
+    repository: { url: process.env.NOTIFICATIONS_REPO_URL || "https://github.com/devchopra999/fintech-notifications.git" }
   },
   // dependencyOnly: never directly requestable/startable - only reachable via a service's
   // `database` field, the `databases` array, or a future `dependencies` entry naming it.
@@ -118,6 +112,17 @@ export function listDependencyOnlyServiceNames() {
 
 export function getCatalogEntry(name) {
   return SERVICE_CATALOG[name];
+}
+
+// Internal docker-network address for a catalogued service. Containers in the same compose
+// project reach each other by service name as the hostname (never "localhost"/127.0.0.1, which
+// resolves to the calling container itself) and the port the service listens on INSIDE its own
+// container (never a host-published port - most services don't publish one at all). Returns null
+// for services with no catalog port.
+export function getInternalUrl(name) {
+  const entry = SERVICE_CATALOG[name];
+  if (!entry?.port) return null;
+  return `http://${name}:${entry.port}`;
 }
 
 // Service name -> repo url mapping, derived from the catalog, for callers that want the whole

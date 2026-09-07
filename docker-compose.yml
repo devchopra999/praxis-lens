@@ -9,10 +9,11 @@ services:
       PRAXIS_DATA_DIR: /data
       PRAXIS_WORKSPACES_DIR: /workspaces
       MYSQL_ROOT_PASSWORD: praxis
-      AIDER_MODEL: ${AIDER_MODEL:-}
+      AIDER_MODEL: ${AIDER_MODEL:-bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0}
       AIDER_TIMEOUT_MS: ${AIDER_TIMEOUT_MS:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
     volumes:
       # only this service ever talks to the Docker Engine API / spawns `docker compose`
       - /var/run/docker.sock:/var/run/docker.sock

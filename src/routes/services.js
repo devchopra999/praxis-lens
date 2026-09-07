@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import * as serviceManager from "../services/service-manager.js";
+import { getRepositoryUrl } from "../config/service-catalog.js";
 import { validate } from "../utils/validate.js";
 
 const router = Router();
@@ -9,10 +10,14 @@ const startServiceSchema = z.object({
   branch: z.string().min(1).optional()
 });
 
+const DEFAULT_BRANCH = "main";
+
 router.post("/environments/:id/services/:service/start", validate(startServiceSchema), (req, res) => {
   const { branch } = req.validated;
-  const result = branch
-    ? serviceManager.startServiceFromBranch(req.params.id, req.params.service, branch)
+  // Only default to main when the service has a repo to check out; repo-less (e.g. dependency-only) services always use the plain start path.
+  const effectiveBranch = branch || (getRepositoryUrl(req.params.service) ? DEFAULT_BRANCH : undefined);
+  const result = effectiveBranch
+    ? serviceManager.startServiceFromBranch(req.params.id, req.params.service, effectiveBranch)
     : serviceManager.startService(req.params.id, req.params.service);
   res.status(202).json(result);
 });

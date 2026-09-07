@@ -16,9 +16,10 @@ const DEFAULT_TIMEOUT_MS = Number(process.env.AIDER_TIMEOUT_MS) || 5 * 60 * 1000
 const AIDER_MAP_TOKENS = Number(process.env.AIDER_MAP_TOKENS) || 4096;
 
 // Only these prefixes are forwarded to the aider subprocess (its own config + known LLM provider
-// keys) - never the Docker socket, DB passwords, etc. that this process also holds.
+// keys, including AWS_* for Bedrock auth) - never the Docker socket, DB passwords, etc. that this
+// process also holds.
 const PASSTHROUGH_ENV_PATTERN =
-  /^(AIDER_|OPENAI_|ANTHROPIC_|AZURE_|GEMINI_|GOOGLE_|GROQ_|DEEPSEEK_|OPENROUTER_|COHERE_|MISTRAL_|OLLAMA_)/;
+  /^(AIDER_|OPENAI_|ANTHROPIC_|AZURE_|GEMINI_|GOOGLE_|GROQ_|DEEPSEEK_|OPENROUTER_|COHERE_|MISTRAL_|OLLAMA_|AWS_)/;
 
 // Resolves the checked-out repo for a service from environment/service config only; the caller
 // never supplies a filesystem path, so this can't be used to reach outside a workspace.

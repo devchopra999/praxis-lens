@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   status TEXT NOT NULL,
   error TEXT,
   error_details TEXT,
+  result TEXT,
   progress TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL,
   started_at TEXT,

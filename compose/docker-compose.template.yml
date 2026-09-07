@@ -1,24 +1,11 @@
 services:
-  mysql:
-    image: mysql:8
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-praxis}
-      MYSQL_DATABASE: app
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    volumes:
-      - ../snapshots/mysql:/snapshots:ro
-
-  mongodb:
-    image: mongo:8
-    volumes:
-      - ../snapshots/mongodb:/snapshots:ro
-
-  redis:
-    image: redis:7
+  # Always-on utility shell for every environment: Python 3 + common CLI tools, no server process
+  # of its own (see toolbox-manager.js). Reached only via POST /environments/:id/execute etc.
+  toolbox:
+    image: praxis-toolbox:latest
+    tty: true
+    stdin_open: true
+    command: ["sleep", "infinity"]
 
   # Always-on reverse proxy every other service points at instead of calling each other directly;
   # built once from the orchestrator repo and reused across environments (see orchestrator-manager.js).
@@ -62,10 +49,11 @@ services:
       SERVICE_NAME: edi
 
 
-  # CosmicBites demo services (real repos: distributed-auth/orders/payments/notifications/gateway).
-  # DATABASE_URL points at each service's own dedicated mysql-<name> container (see worker.js
-  # provisionDefaultDatabase) with the db name each service's own schema.sql creates via
-  # "CREATE DATABASE IF NOT EXISTS" - ignored by the alpine stand-in, used once built from source.
+  # fintech demo services (real repos: fintech-auth/ledger/payments/notifications). Services call
+  # each other directly by hostname - no gateway/proxy in front of them. DATABASE_URL points at
+  # each service's own dedicated mysql-<name> container (see worker.js provisionDefaultDatabase)
+  # with the db name each service's own schema.sql creates - ignored by the alpine stand-in, used
+  # once built from source. JWT_SECRET must match across auth/ledger/payments.
   auth:
     image: ${AUTH_IMAGE:-alpine:3.19}
     command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 4000; done"]
@@ -73,14 +61,17 @@ services:
       ORCHESTRATOR_URL: http://orchestrator:8000
       SERVICE_NAME: auth
       DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-praxis}@mysql-auth:3306/auth_db
+      JWT_SECRET: ${JWT_SECRET:-dummy-fintech-jwt-secret}
 
-  orders:
-    image: ${ORDERS_IMAGE:-alpine:3.19}
+  ledger:
+    image: ${LEDGER_IMAGE:-alpine:3.19}
     command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 4002; done"]
     environment:
       ORCHESTRATOR_URL: http://orchestrator:8000
-      SERVICE_NAME: orders
-      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-praxis}@mysql-orders:3306/order_db
+      SERVICE_NAME: ledger
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-praxis}@mysql-ledger:3306/ledger_db
+      JWT_SECRET: ${JWT_SECRET:-dummy-fintech-jwt-secret}
+      NOTIFICATIONS_URL: http://notifications-gw.local:4004
 
   payments:
     image: ${PAYMENTS_IMAGE:-alpine:3.19}
@@ -89,6 +80,15 @@ services:
       ORCHESTRATOR_URL: http://orchestrator:8000
       SERVICE_NAME: payments
       DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-praxis}@mysql-payments:3306/payment_db
+      JWT_SECRET: ${JWT_SECRET:-dummy-fintech-jwt-secret}
+      # hardcoded third-party gateway hostname (like edi's AXIS_URL) - non-colliding with any real
+      # compose service name, and plain HTTP (not https), so the header injector can intercept it
+      # and hand it to the orchestrator - see header-injector-manager.js FINTECH_GATEWAY_ALIASES
+      PAYMENT_GATEWAY_URL: ${PAYMENT_GATEWAY_URL:-http://api.nexpay.example.com}
+      # renamed off the real "ledger"/"notifications" service hostnames so the header injector can
+      # take over these hostnames without colliding with the real containers' own DNS aliases
+      LEDGER_URL: http://ledger-gw.local:4002
+      NOTIFICATIONS_URL: http://notifications-gw.local:4004
 
   notifications:
     image: ${NOTIFICATIONS_IMAGE:-alpine:3.19}
@@ -98,13 +98,3 @@ services:
       SERVICE_NAME: notifications
       DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-praxis}@mysql-notifications:3306/notification_db
 
-  gateway:
-    image: ${GATEWAY_IMAGE:-alpine:3.19}
-    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 8080; done"]
-    environment:
-      ORCHESTRATOR_URL: http://orchestrator:8000
-      SERVICE_NAME: gateway
-      AUTH_URL: http://auth-service.internal
-      ORDER_URL: http://order-service.internal
-      PAYMENT_URL: http://payment-service.internal
-      NOTIFICATION_URL: http://notification-service.internal
