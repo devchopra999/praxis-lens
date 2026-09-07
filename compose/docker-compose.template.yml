@@ -61,12 +61,6 @@ services:
       ORCHESTRATOR_URL: http://orchestrator:8000
       SERVICE_NAME: edi
 
-  mock-server:
-    image: ${MOCK_SERVER_IMAGE:-alpine:3.19}
-    command: ["sh", "-c", "while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok' | nc -l -p 3000; done"]
-    environment:
-      ORCHESTRATOR_URL: http://orchestrator:8000
-      SERVICE_NAME: mock-server
 
   # CosmicBites demo services (real repos: distributed-auth/orders/payments/notifications/gateway).
   # DATABASE_URL points at each service's own dedicated mysql-<name> container (see worker.js
@@ -110,7 +104,7 @@ services:
     environment:
       ORCHESTRATOR_URL: http://orchestrator:8000
       SERVICE_NAME: gateway
-      AUTH_URL: http://auth:4000
-      ORDER_URL: http://orders:4002
-      PAYMENT_URL: http://payments:4003
-      NOTIFICATION_URL: http://notifications:4004
+      AUTH_URL: http://auth-service.internal
+      ORDER_URL: http://order-service.internal
+      PAYMENT_URL: http://payment-service.internal
+      NOTIFICATION_URL: http://notification-service.internal

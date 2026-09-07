@@ -118,11 +118,21 @@ async function request(project, method, urlPath, body) {
   return { status: res.status, data };
 }
 
+// Optional per-service override for orchestrator targets that live outside the docker network
+// (e.g. a mock server on a public EC2 host) - takes precedence over the catalog's internal
+// address. Follows the same `process.env.X_IMAGE`-style override convention as service-catalog.js.
+const EXTERNAL_TARGET_OVERRIDES = {
+  "mock-server": process.env.MOCK_SERVER_EXTERNAL_URL
+};
+
 // A route's `target` is always given as a catalog service name (never a raw URL) - this resolves
-// it to the actual docker-network address, so callers of putRoute/bulkRegisterRoutes never need
-// to know or construct a target URL themselves. Only HTTP-catalogued services (mob/edi/mock-server,
-// not raw TCP infra like mysql/redis) are valid orchestrator targets.
+// it to the actual address, so callers of putRoute/bulkRegisterRoutes never need to know or
+// construct a target URL themselves. Only HTTP-catalogued services (mob/edi/mock-server, not raw
+// TCP infra like mysql/redis) are valid orchestrator targets.
 function resolveTargetUrl(name) {
+  const override = EXTERNAL_TARGET_OVERRIDES[name];
+  if (override) return override;
+
   const entry = getCatalogEntry(name);
   if (!entry || entry.healthcheck?.type !== "http") {
     const httpServiceNames = listServiceNames().filter((n) => getCatalogEntry(n)?.healthcheck?.type === "http");

@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { appError, ErrorCodes } from "../utils/errors.js";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -28,7 +29,10 @@ async function runCompose(project, environmentId, args) {
   try {
     return await execFileAsync("docker", cmd, { env: { ...process.env }, maxBuffer: 10 * 1024 * 1024 });
   } catch (err) {
-    throw Object.assign(new Error(`docker ${cmd.join(" ")} failed: ${err.stderr || err.message}`), { cause: err });
+    throw appError(ErrorCodes.SERVICE_START_FAILED, `docker compose ${args.join(" ")} failed`, {
+      cause: String(err.stderr || err.message || err),
+      hint: "See cause for the underlying docker/compose error (bad image, port conflict, invalid compose config, etc.)."
+    });
   }
 }
 
